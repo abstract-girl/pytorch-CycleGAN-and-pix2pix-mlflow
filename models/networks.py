@@ -109,10 +109,20 @@ def init_net(net, init_type='normal', init_gain=0.02, gpu_ids=[]):
 
     Return an initialized network.
     """
-    if len(gpu_ids) > 0:
+    # Handle MPS device (Apple Silicon) - special case where gpu_ids=['mps']
+    if gpu_ids and gpu_ids[0] == 'mps':
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            device = torch.device("mps")
+            net.to(device)
+            print("Using MPS device")
+        else:
+            print("MPS device requested but not available, falling back to CPU")
+    # Handle CUDA
+    elif len(gpu_ids) > 0:
         assert(torch.cuda.is_available())
         net.to(gpu_ids[0])
         net = torch.nn.DataParallel(net, gpu_ids)  # multi-GPUs
+    
     init_weights(net, init_type, init_gain=init_gain)
     return net
 

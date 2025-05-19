@@ -32,10 +32,19 @@ class BaseModel(ABC):
         self.opt = opt
         self.gpu_ids = opt.gpu_ids
         self.isTrain = opt.isTrain
-        self.device = torch.device('cuda:{}'.format(self.gpu_ids[0])) if self.gpu_ids else torch.device('cpu')  # get device name: CPU or GPU
+        
+        # Use device from options if available (for MPS support), otherwise determine from gpu_ids
+        if hasattr(opt, 'device'):
+            self.device = opt.device
+        else:
+            self.device = torch.device('cuda:{}'.format(self.gpu_ids[0])) if self.gpu_ids else torch.device('cpu')
+            
         self.save_dir = os.path.join(opt.checkpoints_dir, opt.name)  # save all the checkpoints to save_dir
-        if opt.preprocess != 'scale_width':  # with [scale_width], input images might have different sizes, which hurts the performance of cudnn.benchmark.
+        
+        # Enable cudnn benchmark except for MPS or when using scale_width preprocessing
+        if opt.preprocess != 'scale_width' and not str(self.device).startswith('mps'):  
             torch.backends.cudnn.benchmark = True
+            
         self.loss_names = []
         self.model_names = []
         self.visual_names = []
@@ -153,10 +162,17 @@ class BaseModel(ABC):
                 save_path = os.path.join(self.save_dir, save_filename)
                 net = getattr(self, 'net' + name)
 
+                # Handle different device types for saving
                 if len(self.gpu_ids) > 0 and torch.cuda.is_available():
+                    # CUDA saving
                     torch.save(net.module.cpu().state_dict(), save_path)
                     net.cuda(self.gpu_ids[0])
+                elif str(self.device).startswith('mps'):
+                    # MPS saving - need to move to CPU first
+                    torch.save(net.cpu().state_dict(), save_path)
+                    net.to(self.device)  # Move back to MPS
                 else:
+                    # CPU saving
                     torch.save(net.cpu().state_dict(), save_path)
 
     def __patch_instance_norm_state_dict(self, state_dict, module, keys, i=0):
