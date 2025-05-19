@@ -15,6 +15,9 @@ class TestOptions(BaseOptions):
         # Dropout and Batchnorm has different behavioir during training and test.
         parser.add_argument('--eval', action='store_true', help='use eval mode during test time.')
         parser.add_argument('--num_test', type=int, default=50, help='how many test images to run')
+        # MLflow specific options for model loading
+        parser.add_argument('--mlflow_run_id', type=str, default=None, help='MLflow run ID to load the model from')
+        parser.add_argument('--mlflow_load_model', action='store_true', help='Load model from MLflow instead of local checkpoint')
         # rewrite devalue values
         parser.set_defaults(model='test')
         # To avoid cropping, the load_size should be the same as crop_size

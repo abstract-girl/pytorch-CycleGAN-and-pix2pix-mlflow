@@ -32,11 +32,18 @@ from data import create_dataset
 from models import create_model
 from util.visualizer import save_images
 from util import html
+import numpy as np
 
 try:
     import wandb
 except ImportError:
     print('Warning: wandb package cannot be found. The option "--use_wandb" will result in error.')
+
+try:
+    import mlflow
+    from mlflow.tracking import MlflowClient
+except ImportError:
+    print('Warning: mlflow package cannot be found. The option "--use_mlflow" will result in error.')
 
 
 if __name__ == '__main__':
@@ -56,6 +63,24 @@ if __name__ == '__main__':
         wandb_run = wandb.init(project=opt.wandb_project_name, name=opt.name, config=opt) if not wandb.run else wandb.run
         wandb_run._label(repo='CycleGAN-and-pix2pix')
 
+    # MLflow setup
+    if opt.use_mlflow:
+        # Set MLflow authentication through environment variables if credentials are provided
+        if opt.mlflow_username and opt.mlflow_password:
+            os.environ['MLFLOW_TRACKING_USERNAME'] = opt.mlflow_username
+            os.environ['MLFLOW_TRACKING_PASSWORD'] = opt.mlflow_password
+            print("Using MLflow with Basic authentication via environment variables")
+            
+        mlflow.set_tracking_uri(opt.mlflow_tracking_uri)
+        mlflow.set_experiment(opt.mlflow_experiment_name)
+        
+        # Start MLflow run for testing
+        with mlflow.start_run(run_name=f"{opt.name}_test") as run:
+            # Log test parameters
+            for key, value in vars(opt).items():
+                if key != 'gpu_ids':  # Skip complex parameters
+                    mlflow.log_param(key, value)
+
     # create a website
     web_dir = os.path.join(opt.results_dir, opt.name, '{}_{}'.format(opt.phase, opt.epoch))  # define the website directory
     if opt.load_iter > 0:  # load_iter is 0 by default
@@ -67,6 +92,12 @@ if __name__ == '__main__':
     # For [CycleGAN]: It should not affect CycleGAN as CycleGAN uses instancenorm without dropout.
     if opt.eval:
         model.eval()
+        
+    # Keep track of evaluation metrics
+    if opt.use_mlflow:
+        ssim_scores = []
+        psnr_scores = []
+
     for i, data in enumerate(dataset):
         if i >= opt.num_test:  # only apply our model to opt.num_test images.
             break
@@ -77,4 +108,39 @@ if __name__ == '__main__':
         if i % 5 == 0:  # save images to an HTML file
             print('processing (%04d)-th image... %s' % (i, img_path))
         save_images(webpage, visuals, img_path, aspect_ratio=opt.aspect_ratio, width=opt.display_winsize, use_wandb=opt.use_wandb)
+        
+        # Log images and predictions to MLflow if enabled
+        if opt.use_mlflow and 'fake_B' in visuals and 'real_B' in visuals:
+            # Convert tensors to numpy arrays
+            fake_img = np.array(visuals['fake_B'].cpu())
+            real_img = np.array(visuals['real_B'].cpu())
+            
+            # Calculate simple metrics (placeholder, you might want to use proper implementations)
+            # PSNR calculation (example implementation)
+            mse = np.mean((fake_img - real_img) ** 2)
+            if mse == 0:
+                psnr = 100
+            else:
+                psnr = 20 * np.log10(255.0 / np.sqrt(mse))
+            psnr_scores.append(psnr)
+            
+            # Log the PSNR value for this image
+            mlflow.log_metric(f"image_{i}_psnr", psnr)
+            
+            # Log the images as artifacts
+            if i < 10:  # Limit to first 10 images to avoid too many artifacts
+                img_dir = os.path.join(web_dir, f"img_{i}")
+                os.makedirs(img_dir, exist_ok=True)
+                
+                # Log a grid of input, output, and target for each test image
+                mlflow.log_artifacts(img_dir, artifact_path=f"test_images/image_{i}")
+    
+    # Log average metrics if using MLflow
+    if opt.use_mlflow and psnr_scores:
+        mlflow.log_metric("avg_psnr", np.mean(psnr_scores))
+    
     webpage.save()  # save the HTML
+    
+    # Log test results directory to MLflow
+    if opt.use_mlflow:
+        mlflow.log_artifacts(web_dir, artifact_path="test_results")
