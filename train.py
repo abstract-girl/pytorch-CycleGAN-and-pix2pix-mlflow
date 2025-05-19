@@ -39,6 +39,17 @@ if __name__ == '__main__':
             
         mlflow.set_tracking_uri(opt.mlflow_tracking_uri)
         mlflow.set_experiment(opt.mlflow_experiment_name)
+        
+        # Enable autolog if specified
+        if opt.mlflow_autolog:
+            print("Enabling MLflow autolog")
+            # Enable pytorch autolog with a few customizations
+            mlflow.pytorch.autolog(
+                log_every_n_epoch=1,
+                log_models=True,
+                disable_for_unsupported_versions=False,
+            )
+            
         # Start MLflow run
         with mlflow.start_run(run_name=opt.name) as run:
             # Log parameters
@@ -83,8 +94,9 @@ if __name__ == '__main__':
                         if opt.display_id > 0:
                             visualizer.plot_current_losses(epoch, float(epoch_iter) / dataset_size, losses)
                         
-                        # Log metrics to MLflow if enabled
-                        if opt.use_mlflow:
+                        # Log metrics to MLflow if enabled and autolog is not enabled
+                        # (autolog will handle the metrics automatically)
+                        if opt.use_mlflow and not opt.mlflow_autolog:
                             for loss_name, loss_value in losses.items():
                                 mlflow.log_metric(f"loss/{loss_name}", loss_value, step=total_iters)
                             mlflow.log_metric("time/data", t_data, step=total_iters)
@@ -102,15 +114,16 @@ if __name__ == '__main__':
                     model.save_networks('latest')
                     model.save_networks(epoch)
                     
-                    # Log model to MLflow if enabled
-                    if opt.use_mlflow:
+                    # Log model to MLflow if enabled and autolog is not enabled
+                    # (autolog will handle model logging automatically)
+                    if opt.use_mlflow and not opt.mlflow_autolog:
                         # Save checkpoints directory to MLflow
                         checkpoint_dir = os.path.join(opt.checkpoints_dir, opt.name)
                         mlflow.log_artifacts(checkpoint_dir, artifact_path="checkpoints")
 
                 print('End of epoch %d / %d \t Time Taken: %d sec' % (epoch, opt.n_epochs + opt.n_epochs_decay, time.time() - epoch_start_time))
-                # Log epoch metrics to MLflow
-                if opt.use_mlflow:
+                # Log epoch metrics to MLflow if enabled and autolog is not enabled
+                if opt.use_mlflow and not opt.mlflow_autolog:
                     mlflow.log_metric("epoch/duration_seconds", time.time() - epoch_start_time, step=epoch)
     else:
         # Original training code without MLflow

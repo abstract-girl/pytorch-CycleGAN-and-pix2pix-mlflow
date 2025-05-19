@@ -63,6 +63,7 @@ class BaseOptions():
         parser.add_argument('--mlflow_tracking_uri', type=str, default='./mlruns', help='specify mlflow tracking uri')
         parser.add_argument('--mlflow_username', type=str, default=None, help='username for MLflow tracking server basic auth')
         parser.add_argument('--mlflow_password', type=str, default=None, help='password for MLflow tracking server basic auth')
+        parser.add_argument('--mlflow_autolog', action='store_true', help='enable MLflow autolog feature for automatic logging')
         self.initialized = True
         return parser
 
